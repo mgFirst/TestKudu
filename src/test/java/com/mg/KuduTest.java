@@ -5,6 +5,7 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.*;
+import org.apache.kudu.spark.kudu.SparkUtil;
 import org.apache.kudu.util.DateUtil;
 
 import java.sql.Date;
@@ -17,19 +18,19 @@ public class KuduTest {
 
     private KuduClient kuduClient;
 
-    private String kuduMaster;
+    private SparkUtil sparkUtil;
+    private static String kuduMaster="10.8.0.1:7051,10.8.0.6:7051";
 
     private String tableName;
 
-    @Before
+
     public void init(){
-        tableName = "users";
+        tableName = "user";
         //创建kudu连接
-        kuduMaster = "kuduserver:7051";
+        kuduMaster = "10.8.0.1:7051,10.8.0.6:7051";
         KuduClient.KuduClientBuilder kuduClientBuilder = new KuduClient.KuduClientBuilder(kuduMaster);
         kuduClientBuilder.defaultAdminOperationTimeoutMs(10000);
         kuduClient = kuduClientBuilder.build();
-
     }
 
     /**
@@ -39,9 +40,9 @@ public class KuduTest {
     @Test
     public void createTable() throws KuduException {
 
-        if(kuduClient.tableExists(tableName)){
-            Console.log("数据库表已存在!");
-        }else{
+//        if(kuduClient.tableExists(tableName)){
+//            Console.log("数据库表已存在!");
+//        }else{
             // 列信息
             ArrayList<ColumnSchema> columnSchemas = new ArrayList<>();
             columnSchemas.add(new ColumnSchema.ColumnSchemaBuilder("id", Type.INT32).key(true).nullable(false).build());
@@ -62,7 +63,7 @@ public class KuduTest {
 
             kuduClient.createTable(tableName,schema,createTableOptions);
         }
-    }
+//    }
 
     /**
      * 增
@@ -163,32 +164,32 @@ public class KuduTest {
      */
     @Test
     public void query() throws KuduException {
-        //构建一个查询的扫描器
-        KuduScanner.KuduScannerBuilder kuduScannerBuilder = kuduClient.newScannerBuilder(kuduClient.openTable(tableName));
-        ArrayList<String> columnsList = new ArrayList<String>();
-        columnsList.add("id");
-        columnsList.add("username");
-        columnsList.add("password");
-        columnsList.add("nickname");
-        columnsList.add("birthday");
-        kuduScannerBuilder.setProjectedColumnNames(columnsList);
-        //返回结果集
-        KuduScanner kuduScanner = kuduScannerBuilder.build();
-        //遍历
-        while (kuduScanner.hasMoreRows()){
-            RowResultIterator rowResults = kuduScanner.nextRows();
-            while (rowResults.hasNext()){
-                RowResult row = rowResults.next();
-                Console.log(row.getInt("id"));
-                Console.log(row.getString("username"));
-                Console.log(row.getString("password"));
-                Console.log(row.getString("nickname"));
-                Console.log(row.getDate("birthday"));
+        //1、创建kudu client
+        KuduClient client = new KuduClient.KuduClientBuilder(kuduMaster).build();
+        //2、打开表
+        KuduTable table = client.openTable("person");
+        //3、创建scanner扫描器
+        KuduScanner.KuduScannerBuilder kuduScannerBuilder = client.newScannerBuilder(table);
+        //4、创建查询条件
+        KuduPredicate filter = KuduPredicate.newComparisonPredicate(table.getSchema().getColumn("id"), KuduPredicate.ComparisonOp.EQUAL, 2);
+        //5、将查询条件加入到scanner中
+        KuduScanner scanner = kuduScannerBuilder.addPredicate(filter).build();
+        //6、获取查询结果
+        while (scanner.hasMoreRows()){
+            RowResultIterator rows = scanner.nextRows();
+            while (rows.hasNext()){
+                RowResult row = rows.next();
+                Integer id = row.getInt("id");
+                String name = row.getString("name");
+                int age = row.getInt("age");
+                System.out.println(id+"---"+name+"---"+age);
             }
         }
-        //关闭
-        kuduClient.close();
+        //7、关闭client
+        client.close();
     }
+
+
 
 
 
